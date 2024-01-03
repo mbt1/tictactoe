@@ -1,0 +1,23 @@
+{
+    "name": "Python and Node.js",
+    "context": "..",
+    "dockerFile": "dockerfile",
+	"features": {
+		"ghcr.io/devcontainers/features/git:1": {},
+	},
+    "customizations":{
+        "vscode":{
+            "settings": { 
+                "terminal.integrated.shell.linux": "/bin/bash"
+            },
+            "extensions": [
+                "ms-python.python",
+                "ms-vsliveshare.vsliveshare",
+                "ms-azuretools.vscode-docker"
+            ],
+        }
+    },
+	"postCreateCommand": ["/bin/sh", "-c", "whoami && pwd && chmod 777 ./.devcontainer/postCreateCommand.sh && ./.devcontainer/postCreateCommand.sh"],
+	"postStartCommand": ["/bin/sh", "-c", "whoami && pwd && chmod 777 ./.devcontainer/postStartCommand.sh && ./.devcontainer/postStartCommand.sh"],
+    "remoteUser": "vscode"
+}
