@@ -16,9 +16,17 @@ class TicTacToeEnvironment(py_environment.PyEnvironment):
         # Define the action and observation specs
         self._action_spec = array_spec.BoundedArraySpec(
             shape=(), dtype=np.int32, minimum=0, maximum=8, name='action')
-        self._observation_spec = array_spec.BoundedArraySpec(
-            shape=(3, 3), dtype=np.int32, minimum=0, maximum=2, name='observation')
+        self._observation_spec = {
+            'observation': array_spec.BoundedArraySpec(
+                shape=(3, 3), dtype=np.int32, minimum=0, maximum=2, name='board_observation'),
+            'action_mask': array_spec.BoundedArraySpec(
+                shape=(9,), dtype=np.int32, minimum=0, maximum=1, name='action_mask')
+        }
 
+    @classmethod
+    def observation_and_action_constraint_splitter(cls, observation):
+        return observation['observation'], observation['action_mask']
+    
     @property
     def current_player(self):
         return self._current_player
@@ -44,12 +52,15 @@ class TicTacToeEnvironment(py_environment.PyEnvironment):
     def observation_spec(self):
         return self._observation_spec
 
+    def calculate_action_mask(self):
+        return np.array([1 if cell == 0 else 0 for cell in self._state.flatten()])
+
     def _reset(self):
         self._state = np.zeros((3, 3), dtype=np.int32)
         self._episode_ended = False
         self._current_player = 0
         self._player_caused_error = None
-        return ts.restart(np.array(self._state, dtype=np.int32))
+        return ts.restart({'observation': self._state, 'action_mask': self.calculate_action_mask()})
 
     def _step(self, action):
         # Check if the game is already over
@@ -67,21 +78,22 @@ class TicTacToeEnvironment(py_environment.PyEnvironment):
 
         # Apply the action
         self._state[row][col] = self._player_symbols[self._current_player]
+        observation = {'observation': self._state, 'action_mask': self.calculate_action_mask()}
 
         # Check for a win or draw
         if self._check_for_win(self._current_player):
             self._episode_ended = True           
             reward_value = 1 if self._current_player == self._agent_player else -1
-            return ts.termination(np.array(self._state, dtype=np.int32), reward=reward_value)
+            return ts.termination(observation, reward=reward_value)
         elif np.all(self._state != 0):
             self._episode_ended = True
             reward_value = 0
-            return ts.termination(np.array(self._state, dtype=np.int32), reward=reward_value)
+            return ts.termination(observation, reward=reward_value)
 
         # Switch to the other player
         self._current_player = 1 - self._current_player
 
-        return ts.transition(np.array(self._state, dtype=np.int32), reward=0)
+        return ts.transition(observation, reward=0)
 
     def _check_for_win(self, player):
         symbol = self._player_symbols[player]

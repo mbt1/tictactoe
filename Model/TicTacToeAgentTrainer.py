@@ -2,6 +2,7 @@ import copy
 import tensorflow as tf
 import numpy as np
 import time
+import tensorflow as tf
 from tf_agents.trajectories import trajectory
 from tf_agents.networks import q_network
 from tf_agents.agents.dqn import dqn_agent
@@ -24,6 +25,7 @@ class TicTacToeAgentTrainer:
         self.q_net = q_network.QNetwork(
             self.env.tf.observation_spec(),
             self.env.tf.action_spec(),
+            preprocessing_combiner=tf.keras.layers.Concatenate(axis=-1),
             fc_layer_params=fc_layer_params)
 
         self.optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
@@ -33,6 +35,7 @@ class TicTacToeAgentTrainer:
             self.env.tf.action_spec(),
             q_network=self.q_net,
             optimizer=self.optimizer,
+            observation_and_action_constraint_splitter=TicTacToeEnvironment.observation_and_action_constraint_splitter,
             td_errors_loss_fn=common.element_wise_squared_loss)
 
         self.agent.initialize()
