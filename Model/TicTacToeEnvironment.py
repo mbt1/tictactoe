@@ -4,11 +4,14 @@ from tf_agents.specs import array_spec
 from tf_agents.trajectories import time_step as ts
 
 class TicTacToeEnvironment(py_environment.PyEnvironment):
-    def __init__(self):
+    def __init__(self, agent_player=0):
         # The state will be a 1D array of 9 elements (3x3 board), each can be 0 (empty), 1 (player 1), or 2 (player 2)
         self._state = np.zeros((3, 3), dtype=np.int32)
         self._episode_ended = False
-        self._current_player = 1
+        self._current_player = agent_player
+        self._agent_player = agent_player
+        self._player_symbols = (1,2)
+        self._player_caused_error = None
 
         # Define the action and observation specs
         self._action_spec = array_spec.BoundedArraySpec(
@@ -16,6 +19,25 @@ class TicTacToeEnvironment(py_environment.PyEnvironment):
         self._observation_spec = array_spec.BoundedArraySpec(
             shape=(3, 3), dtype=np.int32, minimum=0, maximum=2, name='observation')
 
+    @property
+    def current_player(self):
+        return self._current_player
+    
+    def set_next_player(self,current_player):
+        self._current_player = current_player
+
+    @property
+    def agent_player(self):
+        return self._agent_player
+
+    @property
+    def agent_caused_error(self):
+        return self._player_caused_error == self._agent_player
+    
+    @property
+    def opponent_caused_error(self):
+        return self._player_caused_error == (1-self._agent_player)
+    
     def action_spec(self):
         return self._action_spec
 
@@ -25,7 +47,8 @@ class TicTacToeEnvironment(py_environment.PyEnvironment):
     def _reset(self):
         self._state = np.zeros((3, 3), dtype=np.int32)
         self._episode_ended = False
-        self._current_player = 1
+        self._current_player = 0
+        self._player_caused_error = None
         return ts.restart(np.array(self._state, dtype=np.int32))
 
     def _step(self, action):
@@ -38,30 +61,35 @@ class TicTacToeEnvironment(py_environment.PyEnvironment):
 
         # Check if the action is invalid (cell already filled)
         if self._state[row][col] != 0:
-            return ts.termination(np.array(self._state, dtype=np.int32), reward=-1)
+            reward_value = -100 if self._current_player == self._agent_player else 0
+            self._player_caused_error = self._current_player
+            return ts.termination(np.array(self._state, dtype=np.int32), reward=reward_value)
 
         # Apply the action
-        self._state[row][col] = self._current_player
+        self._state[row][col] = self._player_symbols[self._current_player]
 
         # Check for a win or draw
         if self._check_for_win(self._current_player):
-            self._episode_ended = True
-            return ts.termination(np.array(self._state, dtype=np.int32), reward=1)
+            self._episode_ended = True           
+            reward_value = 1 if self._current_player == self._agent_player else -1
+            return ts.termination(np.array(self._state, dtype=np.int32), reward=reward_value)
         elif np.all(self._state != 0):
             self._episode_ended = True
-            return ts.termination(np.array(self._state, dtype=np.int32), reward=0)
+            reward_value = 0
+            return ts.termination(np.array(self._state, dtype=np.int32), reward=reward_value)
 
         # Switch to the other player
-        self._current_player = 2 if self._current_player == 1 else 1
+        self._current_player = 1 - self._current_player
 
         return ts.transition(np.array(self._state, dtype=np.int32), reward=0)
 
     def _check_for_win(self, player):
+        symbol = self._player_symbols[player]
         # Check rows, columns, and diagonals for a win
         for i in range(3):
-            if all(self._state[i, :] == player) or all(self._state[:, i] == player):
+            if all(self._state[i, :] == symbol) or all(self._state[:, i] == symbol):
                 return True
-        if self._state[0, 0] == self._state[1, 1] == self._state[2, 2] == player or \
-           self._state[0, 2] == self._state[1, 1] == self._state[2, 0] == player:
+        if self._state[0, 0] == self._state[1, 1] == self._state[2, 2] == symbol or \
+           self._state[0, 2] == self._state[1, 1] == self._state[2, 0] == symbol:
             return True
         return False

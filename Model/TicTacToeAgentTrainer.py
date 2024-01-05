@@ -15,7 +15,7 @@ from TicTacToeEnvironmentBucket import TicTacToeEnvironmentBucket
 
 class TicTacToeAgentTrainer:
     def __init__(self,fc_layer_params=(100, 50, 25),learning_rate=1e-3,buffer_max_length=100000):
-        self.environment_bucket = TicTacToeEnvironmentBucket(20)
+        self.environment_bucket = TicTacToeEnvironmentBucket(max_environments=20,agent_player=0)
         self.past_versions = []
         self.evaluation_results = []
         self.env = self.environment_bucket.get_environment()
@@ -46,28 +46,21 @@ class TicTacToeAgentTrainer:
 
     def collect_data(self, opponent, num_episodes):
         for _ in range(num_episodes):
+            agent_is_first = (np.random.rand() < 0.5)
             time_step = self.env.tf.reset()
+            self.env.py.set_next_player(0 if agent_is_first else 1)
             while not time_step.is_last():
-                if self.env.tf.current_time_step().is_first():
-                    # Randomly decide who takes the first move
-                    if np.random.rand() < 0.5:
-                        action_step = opponent.policy.action(time_step)
-                        next_time_step = self.env.tf.step(action_step.action)
-                        # Skip adding to buffer if the game ends
-                        if next_time_step.is_last():
-                            continue
 
-                action_step = self.agent.collect_policy.action(time_step)
-                next_time_step = self.env.tf.step(action_step.action)
+                if self.env.py.current_player == self.env.py.agent_player:
+                    action_step = self.agent.collect_policy.action(time_step)
+                    next_time_step = self.env.tf.step(action_step.action)
 
-                traj = trajectory.from_transition(time_step, action_step, next_time_step)
-                self.replay_buffer.add_batch(traj)
-
-                if next_time_step.is_last():
-                    break
-
-                action_step = opponent.policy.action(time_step)
-                time_step = self.env.tf.step(action_step.action)
+                    step_trajectory = trajectory.from_transition(time_step, action_step, next_time_step)
+                    self.replay_buffer.add_batch(step_trajectory)
+                    time_step = next_time_step
+                else:
+                    action_step = opponent.policy.action(time_step)
+                    time_step = self.env.tf.step(action_step.action)
 
 
     def train(self, random_epochs, training_epochs, iterations, batch_size=64, evaluation_num_episodes=1000, num_previous_versions=2):
@@ -135,33 +128,32 @@ class TicTacToeAgentTrainer:
 
         
         for name, opponent in opponents.items():
-            counts = [0,[0,0,0],[0,0,0]]
+            counts = [0,[0,0,0,0,0],[0,0,0,0,0]]
             rs = ""
             for no in range(num_episodes):
+                agent_is_first = (np.random.rand() < 0.5)
                 time_step = env.tf.reset()
-                agent_starts = 1 if (np.random.rand() < 0.5) else 0
-                fo=f"{name}[{no}]:{agent_starts}:"
+                env.py.set_next_player(0 if agent_is_first else 1)
+                counts[0] += (1 if agent_is_first else 0)
+                fo=f"{name}[{no}]:{'A' if agent_is_first else 'O'}:"
                 while not time_step.is_last():
-                    if env.tf.current_time_step().is_first():
-                        counts[0]+=agent_starts
-                        if agent_starts == 0:
-                            action_step = opponent.policy.action(time_step)
-                            time_step = env.tf.step(action_step.action)
-                            fo+=str(int(action_step.action))
-
-                    if not time_step.is_last():
-                        action_step = agent.policy.action(time_step)
-                        time_step = env.tf.step(action_step.action)
-                        fo+=str(int(action_step.action.numpy()))
-                        
-                    if not time_step.is_last():
+                    if env.py.current_player == env.py.agent_player:
+                        action_step = agent.collect_policy.action(time_step)
+                    else:
                         action_step = opponent.policy.action(time_step)
-                        time_step = env.tf.step(action_step.action)
-                        fo+=str(int(action_step.action))
+
+                    time_step = env.tf.step(action_step.action)
+                    fo+=str(int(action_step.action))
+                        
                 
-                fo+=f":{self.sign(time_step.reward)}"
-                counts[2-agent_starts][1-self.sign(time_step.reward)]+=1
-                if agent_starts==0:
+                fo+=f":{float(time_step.reward)}"
+                count_bucket = 1-self.sign(time_step.reward)
+                if env.py.agent_caused_error:
+                    count_bucket = 3
+                if env.py.opponent_caused_error:
+                    count_bucket = 4
+                counts[2-agent_is_first][count_bucket]+=1
+                if agent_is_first==0:
                     rs += "w" if time_step.reward > 0 else "l" if time_step.reward < 0 else "d"
                 else:
                     rs += "W" if time_step.reward > 0 else "L" if time_step.reward < 0 else "D"
@@ -171,7 +163,8 @@ class TicTacToeAgentTrainer:
             print(f"V{current_version} {name}:{rs}")
 
         self.evaluation_results.append(results)
-        print(f"V{current_version} evaluation results: {self.evaluation_results[-1]}")
+        xxx = {k:([[f'{ii:.2f}' for ii in i] if isinstance(i,list) else i for i in v]) for k,v in self.evaluation_results[-1].items()}
+        print(f"V{current_version} evaluation results: {xxx}")
         end_time = time.time()
         print(f"V{current_version} evaluation duration: {end_time-start_time:.2f}")
         self.environment_bucket.return_environment(env)
@@ -182,4 +175,4 @@ class TicTacToeAgentTrainer:
 trainer = TicTacToeAgentTrainer(fc_layer_params=(100, 50, 25),learning_rate=1e-3,buffer_max_length=100000)
 
 # Example usage
-evaluation_history = trainer.train(random_epochs=5, training_epochs=25, iterations=100, batch_size=64, evaluation_num_episodes=20)
+evaluation_history = trainer.train(random_epochs=5, training_epochs=25, iterations=100, batch_size=64, evaluation_num_episodes=100)
