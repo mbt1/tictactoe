@@ -12,6 +12,7 @@ from tf_agents.environments import tf_py_environment
 from TicTacToeEnvironment import TicTacToeEnvironment
 from RandomTicTacToePlayer import RandomTicTacToePlayer
 from TicTacToeEnvironmentBucket import TicTacToeEnvironmentBucket
+from FlattenAndConcatenateLayer import FlattenAndConcatenateLayer
 
 
 class TicTacToeAgentTrainer:
@@ -23,11 +24,11 @@ class TicTacToeAgentTrainer:
         
         # Set up the Q-Network and DQN agent
         self.q_net = q_network.QNetwork(
-            self.env.tf.observation_spec(),
-            self.env.tf.action_spec(),
-            preprocessing_combiner=tf.keras.layers.Concatenate(axis=-1),
+            input_tensor_spec = self.env.tf.observation_spec(),
+            action_spec = self.env.tf.action_spec(),
+            preprocessing_combiner=FlattenAndConcatenateLayer(),
             fc_layer_params=fc_layer_params)
-
+        
         self.optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
 
         self.agent = dqn_agent.DqnAgent(
@@ -51,10 +52,13 @@ class TicTacToeAgentTrainer:
         for _ in range(num_episodes):
             agent_is_first = (np.random.rand() < 0.5)
             time_step = self.env.tf.reset()
+
             self.env.py.set_next_player(0 if agent_is_first else 1)
             while not time_step.is_last():
 
+                # print(f"Loop: {_}, player: {self.env.py.current_player}, step: {time_step}")
                 if self.env.py.current_player == self.env.py.agent_player:
+                    
                     action_step = self.agent.collect_policy.action(time_step)
                     next_time_step = self.env.tf.step(action_step.action)
 
