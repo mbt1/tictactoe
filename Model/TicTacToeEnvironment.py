@@ -1,6 +1,7 @@
 import numpy as np
+import tensorflow as tf
 from tf_agents.environments import py_environment
-from tf_agents.specs import array_spec
+from tf_agents.specs import array_spec, BoundedTensorSpec, BoundedArraySpec
 from tf_agents.trajectories import time_step as ts
 
 class TicTacToeEnvironment(py_environment.PyEnvironment):
@@ -14,18 +15,18 @@ class TicTacToeEnvironment(py_environment.PyEnvironment):
         self._player_caused_error = None
 
         # Define the action and observation specs
-        self._action_spec = array_spec.BoundedArraySpec(
-            shape=(), dtype=np.int32, minimum=0, maximum=8, name='action')
+        self._action_spec = BoundedArraySpec(shape=(), dtype=np.int32, minimum=0, maximum=8, name='action')
         self._observation_spec = (
-            array_spec.BoundedArraySpec(
-                shape=(3, 3), dtype=np.int32, minimum=0, maximum=2, name='board_observation'),
-            array_spec.BoundedArraySpec(
-                shape=(9, ), dtype=np.int32, minimum=0, maximum=1, name='action_mask')
+            BoundedArraySpec(shape=(3, 3), dtype=np.int32, minimum=0, maximum=2, name='board_observation'),
+            BoundedArraySpec(shape=(9, ), dtype=np.int32, minimum=0, maximum=1, name='action_mask')
         )
 
     @classmethod
     def observation_and_action_constraint_splitter(cls, observation):
         return observation, observation[1]
+        # if isinstance(observation[0], BoundedTensorSpec) or isinstance(observation[0], BoundedArraySpec):
+        #     return observation, BoundedArraySpec(shape=(9, ), dtype=np.int32, minimum=0, maximum=1, name='action_mask')
+        # return observation, np.array([1 if cell==0 else 0 for row in ((observation[0].numpy())[0]) for cell in row], dtype=np.int32)
     
     @property
     def current_player(self):

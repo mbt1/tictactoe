@@ -166,7 +166,7 @@ class TicTacToeAgentTrainer:
                     rs += "w" if time_step.reward > 0 else "l" if time_step.reward < 0 else "d"
                 else:
                     rs += "W" if time_step.reward > 0 else "L" if time_step.reward < 0 else "D"
-                print(fo)
+                # print(fo)
 
             results[name] = [num_episodes,counts[0],[x/counts[0]*100 for x in counts[1]],[x/(num_episodes-counts[0])*100 for x in counts[2]]]
             print(f"V{current_version} {name}:{rs}")
@@ -185,4 +185,4 @@ trainer = TicTacToeAgentTrainer(fc_layer_params=(100, 50, 25),learning_rate=1e-3
 
 # Example usage
 # evaluation_history = trainer.train(random_epochs=5, training_epochs=25, iterations=100, batch_size=64, evaluation_num_episodes=100)
-evaluation_history = trainer.train(random_epochs=2, training_epochs=5, iterations=10, batch_size=64, evaluation_num_episodes=10)
+evaluation_history = trainer.train(random_epochs=5, training_epochs=100, iterations=100, batch_size=64, evaluation_num_episodes=100)
