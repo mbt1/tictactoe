@@ -71,6 +71,7 @@ class TicTacToeAgentTrainer:
 
 
     def train(self, random_epochs, training_epochs, iterations, batch_size=64, evaluation_num_episodes=1000, num_previous_versions=2):
+        total_training_start_time = time.time()
         random_opponent = RandomTicTacToePlayer(self.env.py)
 
         # Train against random opponent for a fixed number of epochs
@@ -116,7 +117,8 @@ class TicTacToeAgentTrainer:
             self.evaluation_results.append(self.evaluate_agent(evaluation_num_episodes,len(self.past_versions)-1,1,True))
             print(f"Epoch duration: {post_training_time-start_time:.2f}")
 
-
+        total_training_end_time = time.time()
+        print(f"Total training duration: {total_training_end_time-total_training_start_time:.2f}")
         
         return self.evaluation_results
 
@@ -182,4 +184,5 @@ class TicTacToeAgentTrainer:
 trainer = TicTacToeAgentTrainer(fc_layer_params=(100, 50, 25),learning_rate=1e-3,buffer_max_length=100000)
 
 # Example usage
-evaluation_history = trainer.train(random_epochs=5, training_epochs=25, iterations=100, batch_size=64, evaluation_num_episodes=100)
+# evaluation_history = trainer.train(random_epochs=5, training_epochs=25, iterations=100, batch_size=64, evaluation_num_episodes=100)
+evaluation_history = trainer.train(random_epochs=2, training_epochs=5, iterations=10, batch_size=64, evaluation_num_episodes=10)
