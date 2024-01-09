@@ -19,7 +19,6 @@ class TicTacToeAgentTrainer:
     def __init__(self,fc_layer_params=(100, 50, 25),learning_rate=1e-3,buffer_max_length=100000):
         self.environment_bucket = TicTacToeEnvironmentBucket(max_environments=20,agent_player=0)
         self.past_versions = []
-        self.evaluation_results = []
         self.env = self.environment_bucket.get_environment()
         
         # Set up the Q-Network and DQN agent
@@ -88,8 +87,8 @@ class TicTacToeAgentTrainer:
             post_training_time = time.time()
             print(f"Epoch duration: {post_training_time-start_time:.2f}")
 
-        self.past_versions.append(self.agent)
-        self.evaluation_results.append(self.evaluate_agent(evaluation_num_episodes,0,1,True))
+        self.past_versions.append({"agent":self.agent})
+        self.past_versions[-1]["results"]=self.evaluate_agent(evaluation_num_episodes,0,1,True)
 
         # Train against past two versions and random opponent
         for epoch in range(training_epochs):
@@ -99,7 +98,7 @@ class TicTacToeAgentTrainer:
             opponents['Rnd'] = RandomTicTacToePlayer(self.env.py)
             previous_version = len(self.past_versions)-1
             for v in range(previous_version,max(-1,previous_version-num_previous_versions),-1):
-                opponents[f"V{v}"] = copy.deepcopy(self.past_versions[v])
+                opponents[f"V{v}"] = copy.deepcopy(self.past_versions[v]['agent'])
             for opponent_name,opponent in opponents.items():
                 print(f"...collecting against opponent {opponent_name}")
                 self.collect_data(opponent, iterations)
@@ -107,14 +106,14 @@ class TicTacToeAgentTrainer:
                 print(f"...learning from opponent {opponent_name}")
                 for _ in range(iterations):
                     experience, _ = next(iter(self.replay_buffer.as_dataset(
-                        num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)))
+                        num_parallel_calls=tf.data.AUTOTUNE, sample_batch_size=batch_size, num_steps=2).prefetch(tf.data.AUTOTUNE)))
                     self.agent.train(experience)
 
             # Save the current agent for future training
             post_training_time = time.time()
-            self.past_versions.append(self.agent)
+            self.past_versions.append({"agent":self.agent})
             # Evaluate the current agent
-            self.evaluation_results.append(self.evaluate_agent(evaluation_num_episodes,len(self.past_versions)-1,1,True))
+            self.past_versions[-1]["results"]=self.evaluate_agent(evaluation_num_episodes,len(self.past_versions)-1,1,True)
             print(f"Epoch duration: {post_training_time-start_time:.2f}")
 
         total_training_end_time = time.time()
@@ -128,12 +127,12 @@ class TicTacToeAgentTrainer:
         start_time = time.time()
         results = {}
         env = self.environment_bucket.get_environment()
-        agent = copy.deepcopy(self.past_versions[current_version])
+        agent = copy.deepcopy(self.past_versions[current_version]['agent'])
         opponents = dict()
         if include_random:
             opponents['Rnd'] = RandomTicTacToePlayer(env.py)
         for v in range(current_version,max(-1,current_version-num_versions),-1):
-            opponents[f"V{v}"] = copy.deepcopy(self.past_versions[v])
+            opponents[f"V{v}"] = copy.deepcopy(self.past_versions[v]['agent'])
 
         
         for name, opponent in opponents.items():
@@ -171,8 +170,7 @@ class TicTacToeAgentTrainer:
             results[name] = [num_episodes,counts[0],[x/counts[0]*100 for x in counts[1]],[x/(num_episodes-counts[0])*100 for x in counts[2]]]
             print(f"V{current_version} {name}:{rs}")
 
-        self.evaluation_results.append(results)
-        xxx = {k:([[f'{ii:.2f}' for ii in i] if isinstance(i,list) else i for i in v]) for k,v in self.evaluation_results[-1].items()}
+        xxx = {k:([[f'{ii:.2f}' for ii in i] if isinstance(i,list) else i for i in v]) for k,v in ((self.past_versions[-1])['results']).items()}
         print(f"V{current_version} evaluation results: {xxx}")
         end_time = time.time()
         print(f"V{current_version} evaluation duration: {end_time-start_time:.2f}")
@@ -181,8 +179,8 @@ class TicTacToeAgentTrainer:
 
 
 # Initialize the trainer
-trainer = TicTacToeAgentTrainer(fc_layer_params=(100, 50, 25),learning_rate=1e-3,buffer_max_length=100000)
+trainer = TicTacToeAgentTrainer(fc_layer_params=(20, 20, 9),learning_rate=1e-3,buffer_max_length=100000)
 
 # Example usage
 # evaluation_history = trainer.train(random_epochs=5, training_epochs=25, iterations=100, batch_size=64, evaluation_num_episodes=100)
-evaluation_history = trainer.train(random_epochs=5, training_epochs=100, iterations=100, batch_size=64, evaluation_num_episodes=100)
+evaluation_history = trainer.train(random_epochs=1, training_epochs=100, iterations=100, batch_size=64, evaluation_num_episodes=100, num_previous_versions=0)
