@@ -21,6 +21,7 @@ from FlattenAndConcatenateLayer import FlattenAndConcatenateLayer
 
 class TicTacToeAgentTrainer:
     def __init__(self,fc_layer_params=(100, 50, 25),learning_rate=1e-3,buffer_max_length=100000):
+        self.init_parms = f"fc_layer_params={fc_layer_params}, learning_rate={learning_rate}, buffer_max_length={buffer_max_length}"
         self.environment_bucket = TicTacToeEnvironmentBucket(max_environments=20,agent_player=0)
         self.past_versions = []
 
@@ -46,6 +47,7 @@ class TicTacToeAgentTrainer:
             preprocessing_combiner=FlattenAndConcatenateLayer(),
             fc_layer_params=fc_layer_params)
         
+        # optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
         optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
 
         agent = dqn_agent.DqnAgent(
@@ -86,13 +88,19 @@ class TicTacToeAgentTrainer:
         return buffer
 
 
-    def train(self, random_epochs, training_epochs, iterations, batch_size=64, evaluation_num_episodes=1000, num_previous_versions=2):
+    def train(self, random_epochs, training_epochs, iterations, batch_size=64, evaluation_num_episodes=1000):
+        self.train_parms = f"random_epochs={random_epochs}, training_epochs={training_epochs}, iterations={iterations}, batch_size={batch_size}, evaluation_num_episodes={evaluation_num_episodes}, iterations={iterations}"
+
         total_training_start_time = time.time()
         random_opponent = RandomTicTacToePlayer()
 
         # Train against random opponent for a fixed number of epochs
         for epoch in range(random_epochs):
+            print('===================================================================')
             print(f"Starting random epoch: {epoch}")
+            print(self.init_parms)
+            print(self.train_parms)
+            print('===================================================================')
             start_time = time.time()
             trajectories = self.collect_data(self.env, self.agent,(random_opponent,'Rnd'), iterations)
             for t in trajectories:
@@ -112,7 +120,11 @@ class TicTacToeAgentTrainer:
 
         # Train against past two versions and random opponent
         for epoch in range(training_epochs):
+            print('===================================================================')
             print(f"Starting main epoch: {epoch}")
+            print(self.init_parms)
+            print(self.train_parms)
+            print('===================================================================')
             start_time = time.time()
             opponents = []
             opponents.append((RandomTicTacToePlayer(),'Rnd'))
@@ -222,7 +234,8 @@ class TicTacToeAgentTrainer:
 
 
 # Initialize the trainer
-trainer = TicTacToeAgentTrainer(fc_layer_params=(20, 20, 9),learning_rate=1e-3,buffer_max_length=100000)
+trainer = TicTacToeAgentTrainer(fc_layer_params=(10,),learning_rate=1e-6,buffer_max_length=100000)
 
 # evaluation_history = trainer.train(random_epochs=5, training_epochs=25, iterations=100, batch_size=64, evaluation_num_episodes=100)
-trainer.train(random_epochs=1, training_epochs=100, iterations=2, batch_size=20, evaluation_num_episodes=20, num_previous_versions=2)
+# trainer.train(random_epochs=1, training_epochs=120, iterations=500, batch_size=64, evaluation_num_episodes=50)
+trainer.train(random_epochs=20, training_epochs=100, iterations=500, batch_size=64, evaluation_num_episodes=50)
