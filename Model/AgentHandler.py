@@ -14,7 +14,6 @@ class AgentHandler:
 
     def reset(self):
         self._time_step = self._environment.tf.reset()
-        self._buffer = []
     
     def next_action(self, opponent_action):
         if opponent_action is not None:
@@ -28,6 +27,10 @@ class AgentHandler:
 
     def learn(self):
         return "todo"/0
+    
+    def _flush_buffer():
+        return "todo"/0
+        self._buffer = []
     
     def _append_to_buffer(self,time_step,action_step,next_time_step):
         self._buffer.append(trajectory.from_transition(time_step, action_step, next_time_step))
