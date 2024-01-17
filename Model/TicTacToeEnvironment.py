@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+from tf_agents.environments import tf_py_environment
 from tf_agents.environments import py_environment
 from tf_agents.specs import array_spec, BoundedTensorSpec, BoundedArraySpec
 from tf_agents.trajectories import time_step as ts
@@ -20,6 +21,7 @@ class TicTacToeEnvironment(py_environment.PyEnvironment):
             BoundedArraySpec(shape=(3, 3), dtype=np.int32, minimum=0, maximum=2, name='board_observation'),
             BoundedArraySpec(shape=(9, ), dtype=np.int32, minimum=0, maximum=1, name='action_mask')
         )
+        self._tf = tf_py_environment.TFPyEnvironment(self)
 
     @classmethod
     def observation_and_action_constraint_splitter(cls, observation):
@@ -28,12 +30,30 @@ class TicTacToeEnvironment(py_environment.PyEnvironment):
         #     return observation, BoundedArraySpec(shape=(9, ), dtype=np.int32, minimum=0, maximum=1, name='action_mask')
         # return observation, np.array([1 if cell==0 else 0 for row in ((observation[0].numpy())[0]) for cell in row], dtype=np.int32)
     
+    class FlattenAndConcatenateLayer(tf.keras.layers.Layer):
+        def __init__(self):
+            super(TicTacToeEnvironment.FlattenAndConcatenateLayer, self).__init__()
+            self.flatten = tf.keras.layers.Flatten()
+
+        def call(self, inputs):
+            flattened_inputs = [self.flatten(input_tensor) for input_tensor in inputs]
+            concatenated_output = tf.keras.layers.Concatenate(axis=-1)(flattened_inputs)
+            return concatenated_output
+
+
+    @property
+    def tf(self):
+        return self._tf
+
     @property
     def current_player(self):
         return self._current_player
     
-    def set_next_player(self,current_player):
-        self._current_player = current_player
+    def set_next_player(self,next_player):
+        self._current_player = next_player
+
+    def set_next_is_agent_or_opponent(self,is_agent):
+        self._current_player = self._agent_player if (is_agent) else (1 - self._agent_player)
 
     @property
     def agent_player(self):

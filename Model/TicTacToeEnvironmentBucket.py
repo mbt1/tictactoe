@@ -41,4 +41,4 @@ class TicTacToeEnvironmentBucket:
 
     def create_tic_tac_toe_environment(self,agent_player):
         py_env = TicTacToeEnvironment(agent_player=agent_player)
-        return (namedtuple('env',['py','tf']))(py=py_env,tf=tf_py_environment.TFPyEnvironment(py_env))
+        return (namedtuple('env',['py','tf']))(py=py_env,tf=py_env.tf)

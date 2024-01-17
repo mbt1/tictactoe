@@ -6,7 +6,6 @@ import multiprocessing
 import tensorflow as tf
 import numpy as np
 import time
-import tensorflow as tf
 from tf_agents.trajectories import trajectory
 from tf_agents.networks import q_network
 from tf_agents.agents.dqn import dqn_agent
@@ -16,7 +15,6 @@ from tf_agents.environments import tf_py_environment
 from TicTacToeEnvironment import TicTacToeEnvironment
 from RandomTicTacToePlayer import RandomTicTacToePlayer
 from TicTacToeEnvironmentBucket import TicTacToeEnvironmentBucket
-from FlattenAndConcatenateLayer import FlattenAndConcatenateLayer
 
 
 class TicTacToeAgentTrainer:
@@ -44,7 +42,7 @@ class TicTacToeAgentTrainer:
         q_net = q_network.QNetwork(
             input_tensor_spec = observation_spec,
             action_spec = action_spec,
-            preprocessing_combiner=FlattenAndConcatenateLayer(),
+            preprocessing_combiner=TicTacToeEnvironment.FlattenAndConcatenateLayer(),
             fc_layer_params=fc_layer_params)
         
         # optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
@@ -203,7 +201,7 @@ class TicTacToeAgentTrainer:
                 fo=f"{name}[{no}]:{'A' if agent_is_first else 'O'}:"
                 while not time_step.is_last():
                     if env.py.current_player == env.py.agent_player:
-                        action_step = agent.collect_policy.action(time_step)
+                        action_step = agent.policy.action(time_step)
                     else:
                         action_step = opponent.policy.action(time_step)
 
@@ -234,8 +232,8 @@ class TicTacToeAgentTrainer:
 
 
 # Initialize the trainer
-trainer = TicTacToeAgentTrainer(fc_layer_params=(10,),learning_rate=1e-6,buffer_max_length=100000)
+trainer = TicTacToeAgentTrainer(fc_layer_params=(75,75,75,10),learning_rate=1e-5,buffer_max_length=100000)
 
 # evaluation_history = trainer.train(random_epochs=5, training_epochs=25, iterations=100, batch_size=64, evaluation_num_episodes=100)
 # trainer.train(random_epochs=1, training_epochs=120, iterations=500, batch_size=64, evaluation_num_episodes=50)
-trainer.train(random_epochs=20, training_epochs=100, iterations=500, batch_size=64, evaluation_num_episodes=50)
+trainer.train(random_epochs=10, training_epochs=1000, iterations=1, batch_size=64, evaluation_num_episodes=10)
