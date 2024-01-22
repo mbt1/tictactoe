@@ -3,6 +3,8 @@ import traceback
 
 import copy
 import multiprocessing
+import threading
+import uuid
 import tensorflow as tf
 import numpy as np
 import time
@@ -10,7 +12,7 @@ from tf_agents.trajectories import trajectory
 from tf_agents.networks import q_network
 from tf_agents.agents.dqn import dqn_agent
 from tf_agents.utils import common
-from tf_agents.replay_buffers import tf_uniform_replay_buffer
+from tf_agents.replay_buffers import tf_uniform_replay_buffer,episodic_replay_buffer
 from tf_agents.environments import tf_py_environment
 from TicTacToeEnvironment import TicTacToeEnvironment
 from RandomTicTacToePlayer import RandomTicTacToePlayer
@@ -18,16 +20,22 @@ from TicTacToeEnvironmentBucket import TicTacToeEnvironmentBucket
 
 
 class TicTacToeAgentTrainer:
-    def __init__(self,fc_layer_params=(100, 50, 25),learning_rate=1e-3,buffer_max_length=100000):
-        self.init_parms = f"fc_layer_params={fc_layer_params}, learning_rate={learning_rate}, buffer_max_length={buffer_max_length}"
+    def __init__(self,fc_layer_params=(100, 50, 25),learning_rate=1e-3,buffer_max_length=100000,num_steps= 2):
+        self.init_parms = f"fc_layer_params={fc_layer_params}, learning_rate={learning_rate}, buffer_max_length={buffer_max_length}, num_steps={num_steps}"
         self.environment_bucket = TicTacToeEnvironmentBucket(max_environments=20,agent_player=0)
         self.past_versions = []
+        self._episode_counter = TicTacToeAgentTrainer.ThreadSafeIdGenerator()
 
         env = self.environment_bucket.get_environment()
         
-        q_net, optimizer, agent = self.setup_agent(fc_layer_params, learning_rate, env.tf.observation_spec(), env.tf.action_spec(), env.tf.time_step_spec())
+        q_net, optimizer, agent = self.setup_agent(fc_layer_params, learning_rate, num_steps, env.tf.observation_spec(), env.tf.action_spec(), env.tf.time_step_spec())
 
         agent.initialize()
+        # self.replay_buffer = episodic_replay_buffer.EpisodicReplayBuffer(
+        #     data_spec=agent.collect_data_spec,
+        #     completed_only=True,
+        #     buffer_size=8,
+        #     capacity=buffer_max_length)
         self.replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
             data_spec=agent.collect_data_spec,
             batch_size=env.tf.batch_size,
@@ -37,8 +45,19 @@ class TicTacToeAgentTrainer:
         self.q_net = q_net
         self.optimizer = optimizer
         self.agent = agent
+        self.num_steps = num_steps
 
-    def setup_agent(self, fc_layer_params, learning_rate, observation_spec, action_spec, time_step_spec):
+    class ThreadSafeIdGenerator:
+        def __init__(self, initial_value=0):
+            self.value = initial_value
+            self.lock = threading.Lock()
+
+        def get_id(self):
+            with self.lock:
+                self.value += 1
+                return self.value
+
+    def setup_agent(self, fc_layer_params, learning_rate, num_steps, observation_spec, action_spec, time_step_spec):
         q_net = q_network.QNetwork(
             input_tensor_spec = observation_spec,
             action_spec = action_spec,
@@ -52,6 +71,7 @@ class TicTacToeAgentTrainer:
             time_step_spec,
             action_spec,
             q_network=q_net,
+            n_step_update = (num_steps-1),
             optimizer=optimizer,
             observation_and_action_constraint_splitter=TicTacToeEnvironment.observation_and_action_constraint_splitter,
             td_errors_loss_fn=common.element_wise_squared_loss)
@@ -64,10 +84,12 @@ class TicTacToeAgentTrainer:
     def collect_data(self, env, agent, opponent, num_episodes):
         print(f"...collecting {num_episodes} iterations against opponent {opponent[1]}")
         buffer = []
-        for _ in range(num_episodes):
-            agent_is_first = (np.random.rand() < 0.5)
-            time_step = env.tf.reset()
+        # Generate a new GUID for each episode
 
+        for no in range(num_episodes):
+            agent_is_first = (no%2==0)#(np.random.rand() < 0.5)
+            time_step = env.tf.reset()
+            tmp_buffer=[]
             env.py.set_next_player(0 if agent_is_first else 1)
             while not time_step.is_last():
 
@@ -78,11 +100,12 @@ class TicTacToeAgentTrainer:
                     next_time_step = env.tf.step(action_step.action)
 
                     step_trajectory = trajectory.from_transition(time_step, action_step, next_time_step)
-                    buffer.append(step_trajectory)
+                    tmp_buffer.append(step_trajectory)
                     time_step = next_time_step
                 else:
                     action_step = (opponent[0]).policy.action(time_step)
                     time_step = env.tf.step(action_step.action)
+            buffer.append((self._episode_counter.get_id(),tmp_buffer))
         return buffer
 
 
@@ -101,12 +124,16 @@ class TicTacToeAgentTrainer:
             print('===================================================================')
             start_time = time.time()
             trajectories = self.collect_data(self.env, self.agent,(random_opponent,'Rnd'), iterations)
-            for t in trajectories:
-                self.replay_buffer.add_batch(t)
-
+            for episode in trajectories:
+                # episode_id = tf.constant([episode[0]], dtype=tf.int64)
+                for t in episode[1]:
+                    # self.replay_buffer.add_batch(t, episode_id)
+                    self.replay_buffer.add_batch(t)
             # Sample a batch of data from the buffer and update the agent's network
-            experiences = iter(self.replay_buffer.as_dataset(
-                num_parallel_calls=tf.data.AUTOTUNE, sample_batch_size=batch_size, num_steps=2).prefetch(tf.data.AUTOTUNE))
+            # experiences_raw = self.replay_buffer.as_dataset(num_parallel_calls=tf.data.AUTOTUNE)
+            experiences_raw = self.replay_buffer.as_dataset(num_parallel_calls=tf.data.AUTOTUNE, sample_batch_size=batch_size, num_steps=self.num_steps)
+            
+            experiences = iter(experiences_raw.prefetch(tf.data.AUTOTUNE))
             for _ in range(iterations):
                 experience, _ = next(experiences)
                 self.agent.train(experience)
@@ -138,8 +165,11 @@ class TicTacToeAgentTrainer:
             #     results = pool.starmap(self.collect_data, collect_parms)
             results = [self.collect_data(*v) for v in collect_parms]
             for trajectories in results:
-                for t in trajectories:
-                    self.replay_buffer.add_batch(t)
+                for episode in trajectories:
+                    # episode_id = tf.constant([episode[0]], dtype=tf.int64)
+                    for t in episode[1]:
+                        # self.replay_buffer.add_batch(t, episode_id)
+                        self.replay_buffer.add_batch(t)
 
             for env_tbd,_,_,_ in collect_parms:
                 self.environment_bucket.return_environment(env_tbd)
@@ -151,7 +181,7 @@ class TicTacToeAgentTrainer:
 
             print(f"...learning from {len(opponents)} opponents")
             experiences = iter(self.replay_buffer.as_dataset(
-                num_parallel_calls=tf.data.AUTOTUNE, sample_batch_size=batch_size, num_steps=2).prefetch(tf.data.AUTOTUNE))
+                num_parallel_calls=tf.data.AUTOTUNE, sample_batch_size=batch_size, num_steps=self.num_steps).prefetch(tf.data.AUTOTUNE))
             for _ in range(iterations*len(opponents)):
                 experience, _ = next(experiences)
                 self.agent.train(experience)
@@ -194,7 +224,7 @@ class TicTacToeAgentTrainer:
             counts = [0,[0,0,0],[0,0,0]]
             rs = ""
             for no in range(num_episodes):
-                agent_is_first = (np.random.rand() < 0.5)
+                agent_is_first = (no%2==0)#(np.random.rand() < 0.5)
                 time_step = env.tf.reset()
                 env.py.set_next_player(0 if agent_is_first else 1)
                 counts[0] += (1 if agent_is_first else 0)
@@ -206,7 +236,7 @@ class TicTacToeAgentTrainer:
                         action_step = opponent.policy.action(time_step)
 
                     time_step = env.tf.step(action_step.action)
-                    fo+=str(int(action_step.action))
+                    fo+=f", {int(action_step.action)}({time_step.reward.numpy()[0]})"
                         
                 
                 fo+=f":{float(time_step.reward)}"
@@ -217,13 +247,14 @@ class TicTacToeAgentTrainer:
                 else:
                     rs += "W" if time_step.reward > 0 else "L" if time_step.reward < 0 else "D"
                 # print(fo)
+                # print(env.py._state)
 
-            results[name] = [num_episodes,counts[0],[x/counts[0]*100 for x in counts[1]],[x/(num_episodes-counts[0])*100 for x in counts[2]]]
+            results[name] = [num_episodes,counts[0],counts[1],counts[2]]
             print(f"V{current_version} {name}:{rs}")
 
         self.past_versions[current_version]['evaluation_results']= results
-        xxx = {k:([[f'{ii:.2f}' for ii in i] if isinstance(i,list) else i for i in v]) for k,v in results.items()}
-        print(f"V{current_version} evaluation results: {xxx}")
+        # xxx = {k:([[f'{ii:.2f}' for ii in i] if isinstance(i,list) else i for i in v]) for k,v in results.items()}
+        print(f"V{current_version} evaluation results: {results}")
         end_time = time.time()
         print(f"V{current_version} evaluation duration: {end_time-start_time:.2f}")
 
@@ -232,8 +263,8 @@ class TicTacToeAgentTrainer:
 
 
 # Initialize the trainer
-trainer = TicTacToeAgentTrainer(fc_layer_params=(75,75,75,10),learning_rate=1e-5,buffer_max_length=100000)
+trainer = TicTacToeAgentTrainer(fc_layer_params=(75,10),learning_rate=1e-5,buffer_max_length=10000, num_steps=5)
 
 # evaluation_history = trainer.train(random_epochs=5, training_epochs=25, iterations=100, batch_size=64, evaluation_num_episodes=100)
 # trainer.train(random_epochs=1, training_epochs=120, iterations=500, batch_size=64, evaluation_num_episodes=50)
-trainer.train(random_epochs=10, training_epochs=1000, iterations=1, batch_size=64, evaluation_num_episodes=10)
+trainer.train(random_epochs=5, training_epochs=10000, iterations=20, batch_size=64, evaluation_num_episodes=50)

@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import tensorflow as tf
 from tf_agents.environments import tf_py_environment
@@ -14,6 +15,8 @@ class TicTacToeEnvironment(py_environment.PyEnvironment):
         self._agent_player = agent_player
         self._player_symbols = (1,2)
         self._player_caused_error = None
+        self._winning_tuples = [t for j in range(3) for t in [[[j,i] for i in range(3)],[[i,j] for i in range(3)]]]+[[[i,i] for i in range(3)],[[i,2-i] for i in range(3)]]
+        self._prime_factors = (2,3,5)
 
         # Define the action and observation specs
         self._action_spec = BoundedArraySpec(shape=(), dtype=np.int32, minimum=0, maximum=8, name='action')
@@ -26,9 +29,6 @@ class TicTacToeEnvironment(py_environment.PyEnvironment):
     @classmethod
     def observation_and_action_constraint_splitter(cls, observation):
         return observation, observation[1]
-        # if isinstance(observation[0], BoundedTensorSpec) or isinstance(observation[0], BoundedArraySpec):
-        #     return observation, BoundedArraySpec(shape=(9, ), dtype=np.int32, minimum=0, maximum=1, name='action_mask')
-        # return observation, np.array([1 if cell==0 else 0 for row in ((observation[0].numpy())[0]) for cell in row], dtype=np.int32)
     
     class FlattenAndConcatenateLayer(tf.keras.layers.Layer):
         def __init__(self):
@@ -53,7 +53,7 @@ class TicTacToeEnvironment(py_environment.PyEnvironment):
         self._current_player = next_player
 
     def set_next_is_agent_or_opponent(self,is_agent):
-        self._current_player = self._agent_player if (is_agent) else (1 - self._agent_player)
+        self.set_next_player(self._agent_player if is_agent else 1 - self._agent_player)
 
     @property
     def agent_player(self):
@@ -100,31 +100,38 @@ class TicTacToeEnvironment(py_environment.PyEnvironment):
             self._player_caused_error = self._current_player
             return ts.termination(self.get_observation(), reward=reward_value)
 
+        pre_move_win_opportunity = self._check_for_win_opportunity(self._current_player)
         # Apply the action
         self._state[row][col] = self._player_symbols[self._current_player]
 
         # Check for a win or draw
         if self._check_for_win(self._current_player):
             self._episode_ended = True           
-            reward_value = 1 if self._current_player == self._agent_player else -1
+            reward_value = 1 if self._current_player == self._agent_player else -2
             return ts.termination(self.get_observation(), reward=reward_value)
         elif np.all(self._state != 0):
             self._episode_ended = True
             reward_value = 0
             return ts.termination(self.get_observation(), reward=reward_value)
 
-        # Switch to the other player
         self._current_player = 1 - self._current_player
+        opponent_win_opportunity = self._check_for_win_opportunity(self._current_player)
 
-        return ts.transition(self.get_observation(), reward=0)
+        reward = 0
+        if pre_move_win_opportunity or opponent_win_opportunity:
+            reward = -1
+        return ts.transition(self.get_observation(), reward=reward)
 
     def _check_for_win(self, player):
-        symbol = self._player_symbols[player]
-        # Check rows, columns, and diagonals for a win
-        for i in range(3):
-            if all(self._state[i, :] == symbol) or all(self._state[:, i] == symbol):
+        winning_product = self._prime_factors[self._player_symbols[player]]**len(self._winning_tuples[0])
+        for wt in self._winning_tuples:
+            if math.prod([self._prime_factors[self._state[te[0]][te[1]]] for te in wt]) == winning_product:
                 return True
-        if self._state[0, 0] == self._state[1, 1] == self._state[2, 2] == symbol or \
-           self._state[0, 2] == self._state[1, 1] == self._state[2, 0] == symbol:
-            return True
+        return False
+
+    def _check_for_win_opportunity(self, player):
+        win_opportunity_product = self._prime_factors[self._player_symbols[player]]**(len(self._winning_tuples[0]) -1)*self._prime_factors[0]
+        for wt in self._winning_tuples:
+            if math.prod([self._prime_factors[self._state[te[0]][te[1]]] for te in wt]) == win_opportunity_product:
+                return True
         return False
